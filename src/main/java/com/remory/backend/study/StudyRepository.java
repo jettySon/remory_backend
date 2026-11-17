@@ -112,6 +112,7 @@ public class StudyRepository {
     }
 
     List<StudyData.Review> findRecentScheduledReviews(String accountId, StudyData.Review review, int limit) {
+        // 복습 모드 도입 전 기록(NULL)도 정규 복습이다. 이미 저장한 이번 평가는 이력에서 제외한다.
         return jdbc.sql("""
                 SELECT %s FROM review_logs
                 WHERE account_id = :accountId AND card_id = :cardId

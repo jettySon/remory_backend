@@ -8,6 +8,7 @@ final class ReviewScheduler {
 
     static final int HISTORY_LIMIT = 32;
     private static final double TARGET_RECALL = 0.85;
+    // 기억률 R(t) = exp(-t / stability)가 목표치에 도달하는 시간은 -stability × ln(TARGET_RECALL)이다.
     private static final double DECAY_TO_TARGET = -Math.log(TARGET_RECALL);
     private static final long MINUTE = 60;
     private static final long DAY = 24 * 60 * MINUTE;
@@ -15,7 +16,8 @@ final class ReviewScheduler {
 
     private ReviewScheduler() {}
 
-    // Keep the guest scheduler in front/src/study/reviewScheduler.ts in sync with this rule.
+    // 과거 평가를 오래된 순서로 다시 적용해 카드의 기억 안정도를 복원한다.
+    // 계산식과 이력 범위는 front/src/study/reviewScheduler.ts의 비회원 계산과 맞춘다.
     static Instant nextDueAt(List<StudyData.Review> history, StudyData.Review review) {
         double stability = 0;
         Instant previous = null;
@@ -33,7 +35,7 @@ final class ReviewScheduler {
         }
 
         double elapsedSeconds = Math.max(0, Duration.between(previous, review.date()).toMillis() / 1000.0);
-        // R(t) = exp(-t / stability). Compare the rating with the recall expected at review time.
+        // 잊을 가능성이 높았던 시점에도 기억해 냈다면 보통·쉬움의 간격을 더 크게 늘린다.
         double forgotten = -Math.expm1(-elapsedSeconds / stability);
         double priorInterval = stability * DECAY_TO_TARGET;
         double interval = switch (review.rating()) {

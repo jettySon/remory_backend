@@ -55,6 +55,7 @@ public class StudyService {
 
     @Transactional
     public RecordedReview recordReview(String accountId, StudyData.NewReview request) {
+        // 같은 카드의 복습은 순서대로 처리해, 동시에 평가해도 앞선 기록을 다음 일정에 반영한다.
         var progress = repository.findProgressForUpdate(accountId, request.cardId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "복습할 카드를 찾지 못했어요."));
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -62,6 +63,7 @@ public class StudyService {
         try {
             repository.insertReview(accountId, review);
         } catch (DuplicateKeyException ignored) {
+            // 응답 유실로 같은 평가가 다시 들어오면 복습 횟수를 한 번만 반영한다.
             var existing = repository.getReviewForUpdate(accountId, request.id());
             if (!existing.cardId().equals(request.cardId())
                     || !existing.rating().equals(request.rating()) || !request.mode().equals(existing.mode())) {
@@ -69,6 +71,7 @@ public class StudyService {
             }
             return new RecordedReview(progress, existing);
         }
+        // 자유·집중 복습은 통계용 평가 기록을 남기고, 정규 복습에서만 다음 일정을 계산한다.
         if ("scheduled".equals(request.mode())) {
             var history = repository.findRecentScheduledReviews(accountId, review, ReviewScheduler.HISTORY_LIMIT);
             progress = new ReviewProgress(progress.id(), ReviewScheduler.nextDueAt(history.reversed(), review),

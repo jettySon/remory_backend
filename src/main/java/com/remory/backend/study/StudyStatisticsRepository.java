@@ -90,6 +90,7 @@ public class StudyStatisticsRepository {
         var parameters = new ArrayList<Object>(List.of(accountId, StudyRepository.utc(from), StudyRepository.utc(to)));
         if (deckId != null) parameters.add(deckId);
 
+        // 조회 범위는 UTC로 비교하고, 날짜별 건수는 브라우저 시간대의 자정을 기준으로 묶는다.
         var days = new LinkedHashMap<LocalDate, Counts>();
         database.query(sql, row -> {
             var day = StudyRepository.instant(row, "reviewed_at").atZone(zone).toLocalDate();
