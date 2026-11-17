@@ -1,0 +1,11 @@
+spring:
+  config:
+    import: "optional:file:.env[.properties]"
+  datasource:
+    url: "jdbc:mysql://127.0.0.1:${DB_PORT:3307}/${DB_NAME:remory}?sslMode=DISABLED&allowPublicKeyRetrieval=true"
+    username: "${DB_USER:remory}"
+    password: "${DB_PASSWORD:remory-local}"
+
+server:
+  address: 127.0.0.1
+  port: "${API_PORT:8080}"
