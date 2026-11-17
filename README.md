@@ -48,6 +48,8 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 | GET | `/api/v1/study` | 현재 계정의 덱과 카드 조회 |
 | POST | `/api/v1/study/decks` | 덱 만들기 |
 | POST | `/api/v1/study/decks/{deckId}/cards` | 해당 덱에 카드 한 장 또는 여러 장 추가 |
+| PATCH | `/api/v1/study/cards/{cardId}` | 카드 내용 수정. 복습 기록과 다음 복습일 보존 |
+| DELETE | `/api/v1/study/cards/{cardId}` | 카드와 해당 카드의 복습 기록 삭제 |
 | POST | `/api/v1/study/reviews` | 복습 한 번 저장 및 다음 복습 일정 반환 |
 | POST | `/api/v1/study/import` | 비회원의 덱·카드·복습 기록 이관 |
 | GET | `/api/v1/study/activity` | 지정 기간의 일별 평가 건수 |

@@ -54,6 +54,33 @@ public class StudyService {
     }
 
     @Transactional
+    public StudyData.Card editCard(String accountId, String cardId, StudyData.CardContent content) {
+        var card = repository.findCardForUpdate(accountId, cardId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "수정할 카드를 찾지 못했어요."));
+        boolean multipleChoice = "choice".equals(card.kind()) || (card.choices() != null && !card.choices().isEmpty());
+        var choices = content.choices() == null ? card.choices() : content.choices();
+        if (multipleChoice) {
+            if (choices == null || choices.size() != 3 || !choices.contains(content.back())
+                    || choices.stream().map(String::strip).distinct().count() != 3) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "정답과 서로 다른 오답 두 개를 입력해 주세요.");
+            }
+        } else if (content.choices() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "객관식 카드에만 보기를 입력할 수 있어요.");
+        }
+
+        // 내용만 쓰고, 잠금 상태에서 읽은 복습일과 횟수를 API 응답에 그대로 돌려준다.
+        repository.updateCardContent(accountId, cardId, new StudyData.CardContent(content.front(), content.back(), choices));
+        return new StudyData.Card(card.id(), card.deckId(), content.front(), content.back(),
+                card.dueAt(), card.repetitions(), card.kind(), choices);
+    }
+
+    @Transactional
+    public void deleteCard(String accountId, String cardId) {
+        // 카드 삭제 시 외래 키 제약이 연결된 평가 기록도 같은 트랜잭션에서 삭제한다.
+        repository.deleteCard(accountId, cardId);
+    }
+
+    @Transactional
     public RecordedReview recordReview(String accountId, StudyData.NewReview request) {
         // 같은 카드의 복습은 순서대로 처리해, 동시에 평가해도 앞선 기록을 다음 일정에 반영한다.
         var progress = repository.findProgressForUpdate(accountId, request.cardId())

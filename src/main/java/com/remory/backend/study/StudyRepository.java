@@ -89,6 +89,23 @@ public class StudyRepository {
                 .list();
     }
 
+    Optional<StudyData.Card> findCardForUpdate(String accountId, String cardId) {
+        return jdbc.sql("SELECT " + CARD_FIELDS + " FROM cards WHERE account_id = :accountId AND id = :cardId FOR UPDATE")
+                .param("accountId", accountId)
+                .param("cardId", cardId)
+                .query(this::card)
+                .optional();
+    }
+
+    void updateCardContent(String accountId, String cardId, StudyData.CardContent content) {
+        database.update("UPDATE cards SET front = ?, back = ?, choices = ? WHERE account_id = ? AND id = ?",
+                content.front(), content.back(), encodeChoices(content.choices()), accountId, cardId);
+    }
+
+    void deleteCard(String accountId, String cardId) {
+        database.update("DELETE FROM cards WHERE account_id = ? AND id = ?", accountId, cardId);
+    }
+
     Optional<ReviewProgress> findProgressForUpdate(String accountId, String cardId) {
         return jdbc.sql("SELECT id, due_at, repetitions FROM cards"
                         + " WHERE account_id = :accountId AND id = :cardId FOR UPDATE")

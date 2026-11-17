@@ -14,7 +14,9 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -56,6 +58,22 @@ public class StudyController {
             @PathVariable @Size(max = 128) String deckId,
             @Valid @RequestBody CardBatch batch) {
         return noStore(study.createCards(accounts.authenticate(token).id(), deckId, batch.cards()));
+    }
+
+    @PatchMapping("/cards/{cardId}")
+    ResponseEntity<StudyData.Card> editCard(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
+            @PathVariable @Size(max = 128) String cardId,
+            @Valid @RequestBody StudyData.CardContent content) {
+        return noStore(study.editCard(accounts.authenticate(token).id(), cardId, content));
+    }
+
+    @DeleteMapping("/cards/{cardId}")
+    ResponseEntity<Void> deleteCard(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
+            @PathVariable @Size(max = 128) String cardId) {
+        study.deleteCard(accounts.authenticate(token).id(), cardId);
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
     @PostMapping("/reviews")
