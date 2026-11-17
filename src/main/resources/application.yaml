@@ -6,10 +6,6 @@ spring:
   mvc:
     problemdetails:
       enabled: true
-  jpa:
-    open-in-view: false
-    hibernate:
-      ddl-auto: validate
 
 management:
   endpoints:

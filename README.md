@@ -1,6 +1,6 @@
 # 리모리 백엔드
 
-리모리의 API 개발 프로젝트입니다. Java 21, Spring Boot 3.5, Maven Wrapper, MySQL 8.4 LTS를 사용합니다. 로컬에서는 MySQL을 Docker Compose로 실행하고, Spring Boot는 IDE나 터미널에서 실행합니다.
+리모리의 API 개발 프로젝트입니다. Java 21, Spring Boot 3.5, Spring JDBC, Maven Wrapper, MySQL 8.4 LTS를 사용합니다. 로컬에서는 MySQL을 Docker Compose로 실행하고, Spring Boot는 IDE나 터미널에서 실행합니다.
 
 ## 로컬 실행
 
@@ -21,7 +21,7 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 
 ## 데이터베이스 변경
 
-테이블을 처음 추가할 때 `src/main/resources/db/migration/V1__설명.sql`부터 시작하세요. Flyway가 실행 시 적용 이력을 관리하고, Hibernate는 매핑과 스키마를 검증합니다.
+스키마를 변경할 때는 `src/main/resources/db/migration`에 다음 버전의 SQL을 추가하세요. Flyway가 서버 시작 시 변경을 적용하고 이력을 관리합니다. 단순 조회는 `JdbcClient`로 처리하고, 카드 일괄 등록과 비회원 이관에는 `JdbcTemplate.batchUpdate`를 사용합니다.
 
 `docker compose stop mysql`로 DB를 멈출 수 있습니다. 데이터는 이름이 지정된 Docker 볼륨에 보관되므로 `docker compose down` 후 컨테이너를 다시 만들어도 유지됩니다. `docker compose down -v`는 볼륨과 데이터를 삭제합니다.
 
@@ -45,14 +45,19 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 | POST | `/api/v1/auth/login` | 이메일 로그인 |
 | GET | `/api/v1/auth/me` | 로그인된 계정 조회 |
 | POST | `/api/v1/auth/logout` | 사용 중인 세션 종료 |
-| GET | `/api/v1/study` | 현재 계정의 덱·카드·복습 기록과 버전 조회 |
-| PUT | `/api/v1/study` | 조회한 버전을 기준으로 학습 데이터 저장 |
-| POST | `/api/v1/study/import` | 비회원 데이터를 계정에 추가 |
+| GET | `/api/v1/study` | 현재 계정의 덱과 카드 조회 |
+| POST | `/api/v1/study/decks` | 덱 만들기 |
+| POST | `/api/v1/study/decks/{deckId}/cards` | 해당 덱에 카드 한 장 또는 여러 장 추가 |
+| POST | `/api/v1/study/reviews` | 복습 한 번 저장 및 다음 복습 일정 반환 |
+| POST | `/api/v1/study/import` | 비회원의 덱·카드·복습 기록 이관 |
+| GET | `/api/v1/study/activity` | 지정 기간의 일별 평가 건수 |
+| GET | `/api/v1/study/stats` | 덱별 평가, 자주 틀린 카드, 7일 복습 추세 |
 
 ### 저장과 비회원 이관
 
-- `GET /api/v1/study` 응답은 `{"revision":0,"data":{"decks":[],"cards":[],"logs":[]}}` 형태입니다. `PUT`에는 같은 구조로 최신 `revision`과 변경한 전체 데이터를 보냅니다. 다른 기기에서 이미 저장해 버전이 달라졌다면 `409`가 반환됩니다. 최신 데이터를 다시 읽어 반영할 변경을 합쳐 주세요.
-- `POST /api/v1/study/import`에는 리모리의 비회원 데이터인 `{"decks":[...],"cards":[...],"logs":[...]}`를 보냅니다. 같은 ID의 항목은 계정 데이터가 우선이고, 동일한 자료를 다시 보내도 중복되지 않습니다. 카드의 `dueAt`과 `repetitions`, 복습 모드 기록은 새 항목의 원래 값을 유지합니다. 초기 데모에서 생성된 예시 복습 로그는 가져오기에서 제외됩니다.
-- 스냅샷 하나에 덱 1,000개, 카드 20,000개, 복습 기록 100,000건까지 저장할 수 있습니다. 카드가 참조하는 덱과 복습 기록이 참조하는 카드는 같은 스냅샷에 있어야 합니다.
+- 학습 데이터는 계정에 종속된 `decks`, `cards`, `review_logs`에 저장합니다. 기존 버전에서 올릴 때는 백엔드를 내린 뒤 새 버전을 실행하세요. Flyway가 저장된 데이터와 ID, 복습 일정을 이관하고 이전 JSON은 `legacy_study_snapshots`에 보관합니다.
+- 덱 만들기는 덱 객체, 카드 추가는 `{"cards":[{"id":"...","front":"...","back":"..."}]}`, 복습 저장은 `{"id":"...","cardId":"...","rating":"good","mode":"scheduled"}` 형태를 사용합니다. 같은 ID로 재시도하면 중복 저장하지 않습니다. 정규 복습만 일정과 반복 횟수를 갱신합니다.
+- 비회원 이관은 `{"decks":[...],"cards":[...],"logs":[...]}`를 한 트랜잭션으로 처리합니다. 같은 계정에 이미 있는 ID는 서버 데이터를 유지하며, 새 항목의 복습 시각과 다음 복습일은 보존합니다.
+- 일별 조회의 `from`과 `to`는 시작일 포함, 종료일 제외입니다. 통계의 `period`는 `all`, `7`, `30` 중 하나이고 `deckId`는 선택 항목입니다. 두 조회 모두 브라우저의 IANA 시간대 `zone`을 사용합니다.
 
-현재 API는 로컬 개발용입니다. 외부에서 계정을 받기 전에는 HTTPS와 가입·로그인 요청 제한을 배포 환경에 설정하세요. 이메일 인증, 비밀번호 재설정 메일, 소셜 로그인, 프론트엔드 연동은 후속 작업입니다.
+현재 API는 로컬 개발용입니다. 외부에서 계정을 받기 전에는 HTTPS와 가입·로그인 요청 제한을 배포 환경에 설정하세요. 프런트엔드는 이 API로 가입·로그인과 학습 기록 저장을 처리합니다. 이메일 인증, 비밀번호 재설정 메일과 소셜 로그인은 후속 작업입니다.

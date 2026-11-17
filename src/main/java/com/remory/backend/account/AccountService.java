@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,12 +28,14 @@ public class AccountService {
     private static final Duration SESSION_LIFETIME = Duration.ofDays(14);
     private static final Pattern BEARER_TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
     private final JdbcTemplate database;
+    private final JdbcClient jdbc;
     private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(12);
     private final String unknownAccountHash = passwords.encode("unregistered-account");
     private final SecureRandom random = new SecureRandom();
 
-    public AccountService(JdbcTemplate database) {
+    public AccountService(JdbcTemplate database, JdbcClient jdbc) {
         this.database = database;
+        this.jdbc = jdbc;
     }
 
     @Transactional
@@ -50,10 +53,6 @@ public class AccountService {
         }
         database.update("INSERT INTO account_passwords (account_id, password_hash) VALUES (?, ?)",
                 account.id(), passwordHash);
-        database.update("""
-                INSERT INTO study_snapshots (account_id, study_data)
-                VALUES (?, JSON_OBJECT('decks', JSON_ARRAY(), 'cards', JSON_ARRAY(), 'logs', JSON_ARRAY()))
-                """, account.id());
         return issueSession(account);
     }
 
@@ -61,14 +60,16 @@ public class AccountService {
         if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw invalidCredentials();
         }
-        var matches = database.query("""
+        Credentials credentials = jdbc.sql("""
                 SELECT a.id, a.email, p.password_hash
                 FROM accounts a JOIN account_passwords p ON p.account_id = a.id
-                WHERE a.email = ?
-                """, (row, index) -> new Credentials(
-                new Account(row.getString("id"), row.getString("email")), row.getString("password_hash")),
-                normalizeEmail(email));
-        Credentials credentials = matches.isEmpty() ? null : matches.getFirst();
+                WHERE a.email = :email
+                """)
+                .param("email", normalizeEmail(email))
+                .query((row, index) -> new Credentials(
+                        new Account(row.getString("id"), row.getString("email")), row.getString("password_hash")))
+                .optional()
+                .orElse(null);
         boolean correct = passwords.matches(password,
                 credentials == null ? unknownAccountHash : credentials.passwordHash());
         if (!correct || credentials == null) {
@@ -79,15 +80,15 @@ public class AccountService {
 
     public Account authenticate(String authorization) {
         byte[] tokenHash = authorizationHash(authorization);
-        var matches = database.query("""
+        return jdbc.sql("""
                 SELECT a.id, a.email FROM account_sessions s
                 JOIN accounts a ON a.id = s.account_id
-                WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP(6)
-                """, (row, index) -> new Account(row.getString("id"), row.getString("email")), tokenHash);
-        if (matches.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요해요.");
-        }
-        return matches.getFirst();
+                WHERE s.token_hash = :tokenHash AND s.expires_at > CURRENT_TIMESTAMP(6)
+                """)
+                .param("tokenHash", tokenHash)
+                .query((row, index) -> new Account(row.getString("id"), row.getString("email")))
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요해요."));
     }
 
     public void logout(String authorization) {

@@ -35,6 +35,21 @@ public record StudyData(
             @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
     ) {}
 
+    public record NewCard(
+            @NotBlank @Size(max = 128) String id,
+            @NotBlank @Size(max = 20000) String front,
+            @NotBlank @Size(max = 20000) String back,
+            @Pattern(regexp = "basic|word|cloze|choice") String kind,
+            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
+    ) {}
+
+    public record NewReview(
+            @NotBlank @Size(max = 128) String id,
+            @NotBlank @Size(max = 128) String cardId,
+            @NotNull @Pattern(regexp = "again|hard|good|easy") String rating,
+            @NotNull @Pattern(regexp = "scheduled|focus|free") String mode
+    ) {}
+
     public record Review(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 128) String cardId,
