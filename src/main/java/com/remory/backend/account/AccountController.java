@@ -39,7 +39,7 @@ public class AccountController {
     }
 
     @GetMapping("/me")
-    ResponseEntity<AccountService.Account> me(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token) {
+    ResponseEntity<Account> me(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(accounts.authenticate(token));
     }
 

@@ -74,7 +74,7 @@ public class StudyController {
     }
 
     @GetMapping("/activity")
-    ResponseEntity<Map<LocalDate, StudyStatistics.Counts>> activity(
+    ResponseEntity<Map<LocalDate, StudyReport.Counts>> activity(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -83,7 +83,7 @@ public class StudyController {
     }
 
     @GetMapping("/stats")
-    ResponseEntity<StudyStatistics.Report> stats(
+    ResponseEntity<StudyReport> stats(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
             @RequestParam(defaultValue = "all") String period,
             @RequestParam(required = false) @Size(max = 128) String deckId,

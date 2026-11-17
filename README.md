@@ -21,7 +21,7 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 
 ## 데이터베이스 변경
 
-스키마를 변경할 때는 `src/main/resources/db/migration`에 다음 버전의 SQL을 추가하세요. Flyway가 서버 시작 시 변경을 적용하고 이력을 관리합니다. 단순 조회는 `JdbcClient`로 처리하고, 카드 일괄 등록과 비회원 이관에는 `JdbcTemplate.batchUpdate`를 사용합니다.
+스키마를 변경할 때는 `src/main/resources/db/migration`에 다음 버전의 SQL을 추가하세요. Flyway가 서버 시작 시 변경을 적용하고 이력을 관리합니다. Repository에서 SQL 실행과 결과 매핑을 담당합니다. 단순 조회는 `JdbcClient`로 처리하고, 카드 일괄 등록과 비회원 이관에는 `JdbcTemplate.batchUpdate`를 사용합니다. Service에서 복습 규칙과 트랜잭션을 관리합니다.
 
 `docker compose stop mysql`로 DB를 멈출 수 있습니다. 데이터는 이름이 지정된 Docker 볼륨에 보관되므로 `docker compose down` 후 컨테이너를 다시 만들어도 유지됩니다. `docker compose down -v`는 볼륨과 데이터를 삭제합니다.
 
@@ -56,7 +56,7 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 ### 저장과 비회원 이관
 
 - 학습 데이터는 계정에 종속된 `decks`, `cards`, `review_logs`에 저장합니다. 기존 버전에서 올릴 때는 백엔드를 내린 뒤 새 버전을 실행하세요. Flyway가 저장된 데이터와 ID, 복습 일정을 이관하고 이전 JSON은 `legacy_study_snapshots`에 보관합니다.
-- 덱 만들기는 덱 객체, 카드 추가는 `{"cards":[{"id":"...","front":"...","back":"..."}]}`, 복습 저장은 `{"id":"...","cardId":"...","rating":"good","mode":"scheduled"}` 형태를 사용합니다. 같은 ID로 재시도하면 중복 저장하지 않습니다. 정규 복습만 일정과 반복 횟수를 갱신합니다.
+- 덱 만들기는 덱 객체, 카드 추가는 `{"cards":[{"id":"...","front":"...","back":"..."}]}`, 복습 저장은 `{"id":"...","cardId":"...","rating":"good","mode":"scheduled"}` 형태를 사용합니다. 같은 ID로 재시도하면 중복 저장하지 않습니다. 정규 복습은 해당 카드의 최근 정규 복습 기록과 실제 복습 간격을 바탕으로 다음 일정을 계산합니다. 자유·집중 복습은 평가 기록만 저장합니다.
 - 비회원 이관은 `{"decks":[...],"cards":[...],"logs":[...]}`를 한 트랜잭션으로 처리합니다. 같은 계정에 이미 있는 ID는 서버 데이터를 유지하며, 새 항목의 복습 시각과 다음 복습일은 보존합니다.
 - 일별 조회의 `from`과 `to`는 시작일 포함, 종료일 제외입니다. 통계의 `period`는 `all`, `7`, `30` 중 하나이고 `deckId`는 선택 항목입니다. 두 조회 모두 브라우저의 IANA 시간대 `zone`을 사용합니다.
 

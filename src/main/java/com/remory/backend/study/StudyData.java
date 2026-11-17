@@ -43,6 +43,8 @@ public record StudyData(
             @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
     ) {}
 
+    public record ReviewProgress(String id, Instant dueAt, int repetitions) {}
+
     public record NewReview(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 128) String cardId,
