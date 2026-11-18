@@ -49,6 +49,22 @@ public class AccountController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/me/delete")
+    ResponseEntity<Void> deleteSignedInAccount(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
+            @Valid @RequestBody ConfirmDeletion request) {
+        accounts.deleteSignedInAccount(token, request.password());
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
+
+    @PostMapping("/account-deletion")
+    ResponseEntity<Void> deleteAccountFromWeb(@Valid @RequestBody LoginRequest request) {
+        accounts.deleteAccountByCredentials(request.email(), request.password());
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
+
+    record ConfirmDeletion(@NotBlank @Size(max = 72) String password) {}
+
     record LoginRequest(
             @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Size(max = 72) String password

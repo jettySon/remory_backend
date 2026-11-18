@@ -50,17 +50,29 @@ public class AccountService {
         return issueSession(account);
     }
 
+    @Transactional
     public Session login(String email, String password) {
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        Account account = verifyCredentials(email, password);
+        // 탈퇴와 동시에 로그인하면 계정 삭제 후 새 세션을 발급하지 않는다.
+        if (!repository.lockAccount(account.id())) {
             throw invalidCredentials();
         }
-        var credentials = repository.findCredentials(normalizeEmail(email)).orElse(null);
-        boolean correct = passwords.matches(password,
-                credentials == null ? unknownAccountHash : credentials.passwordHash());
-        if (!correct || credentials == null) {
-            throw invalidCredentials();
+        return issueSession(account);
+    }
+
+    @Transactional
+    public void deleteSignedInAccount(String authorization, String password) {
+        Account account = authenticate(authorization);
+        String passwordHash = repository.findPasswordHash(account.id()).orElse(null);
+        if (!matchesPassword(password, passwordHash)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "비밀번호를 확인해 주세요.");
         }
-        return issueSession(credentials.account());
+        repository.deleteAccount(account.id());
+    }
+
+    @Transactional
+    public void deleteAccountByCredentials(String email, String password) {
+        repository.deleteAccount(verifyCredentials(email, password).id());
     }
 
     public Account authenticate(String authorization) {
@@ -85,6 +97,23 @@ public class AccountService {
         Instant expiresAt = Instant.now().plus(SESSION_LIFETIME);
         repository.insertSession(account.id(), hash(token), expiresAt);
         return new Session(account, token, expiresAt);
+    }
+
+    private Account verifyCredentials(String email, String password) {
+        var credentials = repository.findCredentials(normalizeEmail(email)).orElse(null);
+        boolean correct = matchesPassword(password, credentials == null ? null : credentials.passwordHash());
+        if (!correct || credentials == null) {
+            throw invalidCredentials();
+        }
+        return credentials.account();
+    }
+
+    private boolean matchesPassword(String password, String passwordHash) {
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            return false;
+        }
+        boolean correct = passwords.matches(password, passwordHash == null ? unknownAccountHash : passwordHash);
+        return passwordHash != null && correct;
     }
 
     private static byte[] authorizationHash(String authorization) {

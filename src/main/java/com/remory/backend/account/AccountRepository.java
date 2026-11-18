@@ -40,6 +40,26 @@ public class AccountRepository {
                 .optional();
     }
 
+    Optional<String> findPasswordHash(String accountId) {
+        return jdbc.sql("SELECT password_hash FROM account_passwords WHERE account_id = :accountId")
+                .param("accountId", accountId)
+                .query(String.class)
+                .optional();
+    }
+
+    boolean lockAccount(String accountId) {
+        return jdbc.sql("SELECT id FROM accounts WHERE id = :accountId FOR UPDATE")
+                .param("accountId", accountId)
+                .query(String.class)
+                .optional()
+                .isPresent();
+    }
+
+    void deleteAccount(String accountId) {
+        // 계정에 연결된 세션, 학습 데이터와 이관 전 스냅샷은 외래 키로 함께 삭제된다.
+        database.update("DELETE FROM accounts WHERE id = ?", accountId);
+    }
+
     Optional<Account> findActiveSessionAccount(byte[] tokenHash) {
         return jdbc.sql("""
                 SELECT a.id, a.email FROM account_sessions s
