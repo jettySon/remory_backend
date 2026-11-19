@@ -53,16 +53,14 @@ public class AccountService {
     @Transactional
     public Session login(String email, String password) {
         Account account = verifyCredentials(email, password);
-        // 탈퇴와 동시에 로그인하면 계정 삭제 후 새 세션을 발급하지 않는다.
-        if (!repository.lockAccount(account.id())) {
-            throw invalidCredentials();
-        }
         return issueSession(account);
     }
 
     @Transactional
     public void deleteSignedInAccount(String authorization, String password) {
         Account account = authenticate(authorization);
+        if (!repository.lockAccount(account.id())) throw invalidCredentials();
+        authenticate(authorization);
         String passwordHash = repository.findPasswordHash(account.id()).orElse(null);
         if (!matchesPassword(password, passwordHash)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "비밀번호를 확인해 주세요.");
@@ -180,7 +178,10 @@ public class AccountService {
 
     private Account verifyCredentials(String email, String password) {
         var credentials = repository.findCredentials(normalizeEmail(email)).orElse(null);
-        boolean correct = matchesPassword(password, credentials == null ? null : credentials.passwordHash());
+        // 비밀번호 재설정과 같은 계정 잠금을 사용하고, 잠금 후 최신 비밀번호를 확인한다.
+        boolean locked = credentials != null && repository.lockAccount(credentials.account().id());
+        String currentHash = locked ? repository.findPasswordHash(credentials.account().id()).orElse(null) : null;
+        boolean correct = matchesPassword(password, currentHash);
         if (!correct || credentials == null) {
             throw invalidCredentials();
         }

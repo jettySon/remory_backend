@@ -6,6 +6,19 @@ spring:
   docker:
     compose:
       enabled: false
+  mail:
+    host: "${MAIL_HOST:}"
+    port: "${MAIL_PORT:587}"
+    username: "${MAIL_USERNAME:}"
+    password: "${MAIL_PASSWORD:}"
+    default-encoding: UTF-8
+    properties:
+      mail.smtp.auth: "${MAIL_SMTP_AUTH:true}"
+      mail.smtp.starttls.enable: "${MAIL_STARTTLS:true}"
+      mail.smtp.starttls.required: "${MAIL_STARTTLS:true}"
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   mvc:
     problemdetails:
       enabled: true
@@ -22,3 +35,6 @@ management:
 remory:
   google:
     client-id: "${GOOGLE_CLIENT_ID:1002967457797-e9uivon2inag80u3ci1plk1mieq5lm5a.apps.googleusercontent.com}"
+  password-reset:
+    enabled: "${PASSWORD_RESET_ENABLED:false}"
+    from: "${MAIL_FROM:}"
