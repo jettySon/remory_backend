@@ -18,3 +18,7 @@ management:
   endpoint:
     health:
       show-details: never
+
+remory:
+  google:
+    client-id: "${GOOGLE_CLIENT_ID:1002967457797-e9uivon2inag80u3ci1plk1mieq5lm5a.apps.googleusercontent.com}"

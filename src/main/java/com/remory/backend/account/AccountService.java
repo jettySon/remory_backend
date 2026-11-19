@@ -39,7 +39,7 @@ public class AccountService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "비밀번호는 8자 이상, UTF-8 기준 72바이트 이하여야 해요.");
         }
 
-        var account = new Account(UUID.randomUUID().toString(), normalizeEmail(email));
+        var account = new Account(UUID.randomUUID().toString(), normalizeEmail(email), true, false);
         String passwordHash = passwords.encode(password);
         try {
             repository.insertAccount(account);
@@ -88,12 +88,91 @@ public class AccountService {
     @Scheduled(fixedDelayString = "PT6H")
     void removeExpiredSessions() {
         repository.deleteExpiredSessions();
+        repository.deleteExpiredGoogleChallenges();
+    }
+
+    @Transactional
+    public String createGoogleChallenge(String browser, String purpose) {
+        String nonce = randomToken();
+        repository.insertGoogleChallenge(hash(nonce), hash(browser), purpose, Instant.now().plus(Duration.ofMinutes(5)));
+        return nonce;
+    }
+
+    @Transactional
+    public Session loginWithGoogle(GoogleIdentityVerifier.Identity identity, String browser, String password) {
+        // The one-use nonce binds Google's response to this browser and this login attempt.
+        consumeGoogleChallenge(identity, browser, "login");
+        Account account = repository.findGoogleAccount(identity.subject()).orElse(null);
+        if (account != null) {
+            if (!repository.lockAccount(account.id())) throw invalidCredentials();
+            return issueSession(account);
+        }
+
+        String email = normalizeEmail(identity.email());
+        account = repository.findByEmail(email).orElse(null);
+        if (account != null) {
+            if (!repository.lockAccount(account.id())) throw invalidCredentials();
+            // Email matching alone cannot link an existing local account.
+            if (account.googleLinked() || !account.hasPassword()) {
+                throw googleError(HttpStatus.CONFLICT, "GOOGLE_ACCOUNT_CONFLICT");
+            }
+            if (password == null || password.isBlank()) {
+                throw googleError(HttpStatus.CONFLICT, "GOOGLE_LINK_REQUIRED");
+            }
+            if (!matchesPassword(password, repository.findPasswordHash(account.id()).orElse(null))) {
+                throw googleError(HttpStatus.FORBIDDEN, "GOOGLE_LINK_PASSWORD");
+            }
+        } else {
+            account = new Account(UUID.randomUUID().toString(), email, false, true);
+        }
+
+        try {
+            if (!account.hasPassword()) repository.insertAccount(account);
+            repository.insertGoogleIdentity(account.id(), identity.subject());
+        } catch (DuplicateKeyException error) {
+            // Roll back both the new account and nonce consumption if another login won the race.
+            throw googleError(HttpStatus.CONFLICT, "GOOGLE_RETRY");
+        }
+        return issueSession(new Account(account.id(), account.email(), account.hasPassword(), true));
+    }
+
+    @Transactional
+    public Account deleteWithGoogle(String authorization, GoogleIdentityVerifier.Identity identity, String browser) {
+        Account current = authorization == null ? null : authenticate(authorization);
+        consumeGoogleChallenge(identity, browser, "delete");
+        Account googleAccount = repository.findGoogleAccount(identity.subject())
+                .orElseThrow(() -> googleError(HttpStatus.NOT_FOUND, "GOOGLE_ACCOUNT_NOT_FOUND"));
+        if (current != null && !current.id().equals(googleAccount.id())) {
+            throw googleError(HttpStatus.FORBIDDEN, "GOOGLE_ACCOUNT_MISMATCH");
+        }
+        if (!repository.lockAccount(googleAccount.id())) {
+            throw googleError(HttpStatus.NOT_FOUND, "GOOGLE_ACCOUNT_NOT_FOUND");
+        }
+        repository.deleteAccount(googleAccount.id());
+        return googleAccount;
+    }
+
+    private void consumeGoogleChallenge(GoogleIdentityVerifier.Identity identity, String browser, String purpose) {
+        if (browser == null || !BEARER_TOKEN.matcher(browser).matches()
+                || !repository.consumeGoogleChallenge(hash(identity.nonce()), hash(browser), purpose)) {
+            throw googleError(HttpStatus.UNAUTHORIZED, "GOOGLE_RESTART");
+        }
+    }
+
+    private String randomToken() {
+        byte[] bytes = new byte[32];
+        random.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    static ResponseStatusException googleError(HttpStatus status, String code) {
+        var error = new ResponseStatusException(status, code);
+        error.getBody().setProperty("code", code);
+        return error;
     }
 
     private Session issueSession(Account account) {
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        String token = randomToken();
         Instant expiresAt = Instant.now().plus(SESSION_LIFETIME);
         repository.insertSession(account.id(), hash(token), expiresAt);
         return new Session(account, token, expiresAt);

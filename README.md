@@ -40,6 +40,22 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 
 첫 빌드에서는 Maven Wrapper가 Maven과 필요한 라이브러리를 내려받습니다.
 
+## Google 로그인 설정
+
+Google Auth Platform에서 웹 애플리케이션 클라이언트를 생성하고 승인된 JavaScript 원본에 `http://localhost`와 `http://localhost:5173`을 등록합니다. 배포 시에는 서비스의 HTTPS 원본도 등록하세요. `GOOGLE_CLIENT_ID`로 인증 대상을 설정하며, 기본값은 이 프로젝트에 등록한 웹 클라이언트입니다.
+
+서버는 Google 공개키로 서명을 검증하고 발급자, 클라이언트 ID, 만료 시각, 검증된 이메일과 nonce를 확인합니다. Google의 `sub`를 `account_identities`에 저장해 같은 사용자를 식별합니다. 로그인과 탈퇴는 각각 5분짜리 일회용 nonce를 사용하며 HttpOnly 쿠키로 해당 브라우저에 연결합니다. 실패한 비밀번호 확인은 트랜잭션을 되돌려 같은 인증 요청에서 다시 확인할 수 있습니다.
+
+기존 이메일 계정은 비밀번호를 확인한 뒤 연결합니다. Google 전용 계정은 비밀번호 없이 생성하며, 탈퇴할 때 Google로 다시 본인 확인을 진행합니다. HTTPS 프록시 뒤에 배포할 때는 전달 헤더 처리(`SERVER_FORWARD_HEADERS_STRATEGY`)를 배포 구성에 맞게 설정해 쿠키에 Secure 속성이 적용되도록 하세요.
+
+Google 관련 단위 테스트는 `./mvnw verify`에서 실행합니다. MySQL 통합 테스트는 테스트 전용 데이터베이스 주소를 지정하면 함께 실행됩니다.
+
+```sh
+REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DISABLED&allowPublicKeyRetrieval=true' ./mvnw verify
+```
+
+테스트 DB 계정은 `REMORY_TEST_DB_USER`, `REMORY_TEST_DB_PASSWORD`로 지정하며 기본값은 `remory`, `remory-local`입니다.
+
 ## 계정과 학습 데이터 API
 
 회원가입과 로그인 요청은 `application/json`으로 `email`과 `password`를 보냅니다. 성공하면 계정 정보, `accessToken`, `expiresAt`을 받습니다. 로그인 이후에는 `Authorization: Bearer <accessToken>` 헤더를 사용합니다. 로그인은 발급일로부터 14일 동안 유지되고, 로그아웃하면 사용 중인 토큰만 폐기합니다.
@@ -48,6 +64,10 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 | --- | --- | --- |
 | POST | `/api/v1/auth/signup` | 이메일 가입 및 로그인 |
 | POST | `/api/v1/auth/login` | 이메일 로그인 |
+| GET | `/api/v1/auth/google/challenge` | Google 인증용 클라이언트 ID와 일회용 nonce 발급 |
+| POST | `/api/v1/auth/google` | Google 가입·로그인 및 기존 이메일 계정 연결 |
+| POST | `/api/v1/auth/google/me/delete` | Google 본인 확인 후 로그인된 계정 삭제 |
+| POST | `/api/v1/auth/google/account-deletion` | 웹에서 Google 본인 확인 후 계정 삭제 |
 | GET | `/api/v1/auth/me` | 로그인된 계정 조회 |
 | POST | `/api/v1/auth/logout` | 사용 중인 세션 종료 |
 | POST | `/api/v1/auth/me/delete` | 로그인한 계정의 비밀번호를 다시 확인하고 계정 삭제 |
@@ -64,7 +84,7 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 
 ### 회원탈퇴
 
-설정에서 탈퇴할 때는 로그인 토큰과 `{"password":"..."}`를 보내며, 웹 탈퇴는 `{"email":"...","password":"..."}`를 보냅니다. 성공하면 계정, 비밀번호 해시, 모든 세션, 덱·카드·복습 기록과 이관 전 학습 스냅샷이 한 트랜잭션에서 삭제됩니다.
+설정에서 탈퇴할 때는 로그인 토큰과 `{"password":"..."}`를 보내며, 웹 탈퇴는 `{"email":"...","password":"..."}`를 보냅니다. Google 전용 계정은 Google 본인 확인 후 삭제하며, 성공하면 계정, 비밀번호 해시, 소셜 로그인 연결, 모든 세션, 덱·카드·복습 기록과 이관 전 학습 스냅샷이 한 트랜잭션에서 삭제됩니다.
 
 ### 저장과 비회원 이관
 
@@ -73,4 +93,4 @@ MySQL은 `127.0.0.1:3307`, API는 `127.0.0.1:8080`을 사용합니다. 별도 �
 - 비회원 이관은 `{"decks":[...],"cards":[...],"logs":[...]}`를 한 트랜잭션으로 처리합니다. 같은 계정에 이미 있는 ID는 서버 데이터를 유지하며, 새 항목의 복습 시각과 다음 복습일은 보존합니다.
 - 일별 조회의 `from`과 `to`는 시작일 포함, 종료일 제외입니다. 통계의 `period`는 `all`, `7`, `30` 중 하나이고 `deckId`는 선택 항목입니다. 두 조회 모두 브라우저의 IANA 시간대 `zone`을 사용합니다.
 
-현재 API는 로컬 개발용입니다. 외부에서 계정을 받기 전에는 HTTPS와 인증 요청 제한을 배포 환경에 설정하세요. 프런트엔드는 이 API로 가입·로그인과 학습 기록 저장을 처리합니다. 이메일 인증, 비밀번호 재설정 메일과 소셜 로그인은 후속 작업입니다.
+현재 API는 로컬 개발용입니다. 외부에서 계정을 받기 전에는 HTTPS와 인증 요청 제한을 배포 환경에 설정하세요. 프런트엔드는 이 API로 가입·로그인과 학습 기록 저장을 처리합니다. 이메일 인증과 비밀번호 재설정 메일은 후속 작업입니다.
