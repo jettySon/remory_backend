@@ -7,9 +7,14 @@
 Java 21과 Docker Compose가 필요합니다. Docker Desktop을 실행한 뒤 이 폴더에서 아래 명령을 실행하세요.
 
 ```sh
-docker compose up -d --wait mysql
 ./mvnw spring-boot:run
 ```
+
+기본 `local` 프로필에서는 Spring Boot가 Docker Compose로 MySQL을 실행하고, DB 준비가 끝나면 API를 시작합니다. IntelliJ에서도 백엔드 메인 클래스를 실행하면 같은 방식으로 동작합니다. 실행 작업 디렉터리는 이 백엔드 폴더로 지정하세요.
+
+`Ctrl+C`로 API를 종료해도 MySQL은 계속 실행되므로 DataGrip에서 DB를 확인하거나 API를 다시 실행할 수 있습니다. DB까지 멈추려면 `docker compose stop mysql`을 실행하세요.
+
+이미 별도로 실행한 MySQL에 연결할 때는 `SPRING_DOCKER_COMPOSE_ENABLED=false ./mvnw spring-boot:run`으로 자동 실행을 끌 수 있습니다.
 
 다른 터미널에서 API와 DB 연결 상태를 확인할 수 있습니다.
 

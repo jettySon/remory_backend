@@ -3,6 +3,9 @@ spring:
     name: remory-backend
   profiles:
     default: local
+  docker:
+    compose:
+      enabled: false
   mvc:
     problemdetails:
       enabled: true
