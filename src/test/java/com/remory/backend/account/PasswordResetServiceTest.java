@@ -182,11 +182,13 @@ class PasswordResetServiceTest {
                 new AccountRepository.Credentials(account, passwords.encode("old-password"))));
         when(accounts.lockAccount(account.id())).thenReturn(true);
         when(accounts.findPasswordHash(account.id())).thenReturn(Optional.of(passwords.encode("new-password")));
-        var accountService = new AccountService(accounts);
+        var sessions = mock(SessionService.class);
+        when(sessions.issue(any())).thenAnswer(call -> new AccountService.Session(call.getArgument(0), "t".repeat(43), Instant.now().plusSeconds(900)));
+        var accountService = new AccountService(accounts, sessions);
         assertThatThrownBy(() -> accountService.login(account.email(), "old-password"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         error -> assertThat(error.getStatusCode().value()).isEqualTo(401));
-        verify(accounts, never()).insertSession(any(), any(), any());
+        verify(sessions, never()).issue(any());
         assertThat(accountService.login(account.email(), "new-password").account()).isEqualTo(account);
     }
 

@@ -22,6 +22,7 @@ class GoogleAccountServiceTest {
 
     private AccountRepository repository;
     private AccountService service;
+    private SessionService sessions;
     private final GoogleIdentityVerifier.Identity identity =
             new GoogleIdentityVerifier.Identity("google-subject", "person@example.com", "n".repeat(43));
     private static final String BROWSER = "b".repeat(43);
@@ -29,7 +30,9 @@ class GoogleAccountServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
-        service = new AccountService(repository);
+        sessions = mock(SessionService.class);
+        when(sessions.issue(any())).thenAnswer(call -> new AccountService.Session(call.getArgument(0), "t".repeat(43), java.time.Instant.now().plusSeconds(900)));
+        service = new AccountService(repository, sessions);
     }
 
     private void allowLogin() {
@@ -65,7 +68,7 @@ class GoogleAccountServiceTest {
         when(repository.lockAccount(account.id())).thenReturn(true);
         assertCode(() -> service.loginWithGoogle(identity, BROWSER, null), 409, "GOOGLE_LINK_REQUIRED");
         verify(repository, never()).insertGoogleIdentity(any(), any());
-        verify(repository, never()).insertSession(any(), any(), any());
+        verify(sessions, never()).issue(any());
     }
 
     @Test
@@ -93,7 +96,7 @@ class GoogleAccountServiceTest {
                 .thenReturn(Optional.of(new BCryptPasswordEncoder().encode("correct-password")));
         assertCode(() -> service.loginWithGoogle(identity, BROWSER, "wrong-password"), 403, "GOOGLE_LINK_PASSWORD");
         verify(repository, never()).insertGoogleIdentity(any(), any());
-        verify(repository, never()).insertSession(any(), any(), any());
+        verify(sessions, never()).issue(any());
     }
 
     @Test
@@ -110,7 +113,7 @@ class GoogleAccountServiceTest {
     void replayOrWrongBrowserFailsBeforeAccountLookup() {
         assertCode(() -> service.loginWithGoogle(identity, BROWSER, null), 401, "GOOGLE_RESTART");
         verify(repository, never()).findGoogleAccount(any());
-        verify(repository, never()).insertSession(any(), any(), any());
+        verify(sessions, never()).issue(any());
     }
 
     @Test
@@ -118,7 +121,7 @@ class GoogleAccountServiceTest {
         allowLogin();
         doThrow(new DuplicateKeyException("identity already exists")).when(repository).insertGoogleIdentity(any(), any());
         assertCode(() -> service.loginWithGoogle(identity, BROWSER, null), 409, "GOOGLE_RETRY");
-        verify(repository, never()).insertSession(any(), any(), any());
+        verify(sessions, never()).issue(any());
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.remory.backend.account;
 
 import java.nio.charset.StandardCharsets;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -22,15 +23,16 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AccountService {
 
-    private static final Duration SESSION_LIFETIME = Duration.ofDays(14);
     private static final Pattern BEARER_TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
     private final AccountRepository repository;
+    private final SessionService sessions;
     private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(12);
     private final String unknownAccountHash = passwords.encode("unregistered-account");
     private final SecureRandom random = new SecureRandom();
 
-    public AccountService(AccountRepository repository) {
+    public AccountService(AccountRepository repository, SessionService sessions) {
         this.repository = repository;
+        this.sessions = sessions;
     }
 
     @Transactional
@@ -77,10 +79,6 @@ public class AccountService {
         byte[] tokenHash = authorizationHash(authorization);
         return repository.findActiveSessionAccount(tokenHash)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요해요."));
-    }
-
-    public void logout(String authorization) {
-        repository.deleteSession(authorizationHash(authorization));
     }
 
     @Scheduled(fixedDelayString = "PT6H")
@@ -170,10 +168,7 @@ public class AccountService {
     }
 
     private Session issueSession(Account account) {
-        String token = randomToken();
-        Instant expiresAt = Instant.now().plus(SESSION_LIFETIME);
-        repository.insertSession(account.id(), hash(token), expiresAt);
-        return new Session(account, token, expiresAt);
+        return sessions.issue(account);
     }
 
     private Account verifyCredentials(String email, String password) {
@@ -196,7 +191,7 @@ public class AccountService {
         return passwordHash != null && correct;
     }
 
-    private static byte[] authorizationHash(String authorization) {
+    static byte[] authorizationHash(String authorization) {
         if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요해요.");
         }
@@ -223,5 +218,10 @@ public class AccountService {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호를 확인해 주세요.");
     }
 
-    public record Session(Account account, String accessToken, Instant expiresAt) {}
+    public record Session(Account account, String accessToken, Instant expiresAt,
+            @JsonIgnore String refreshToken, @JsonIgnore Instant refreshExpiresAt) {
+        public Session(Account account, String accessToken, Instant expiresAt) {
+            this(account, accessToken, expiresAt, null, null);
+        }
+    }
 }

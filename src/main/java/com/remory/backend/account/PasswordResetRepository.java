@@ -119,6 +119,9 @@ public class PasswordResetRepository {
     }
 
     void deleteSessions(String accountId) {
+        // Password recovery revokes persistent login on every device as well as access tokens.
+        jdbc.sql("DELETE FROM account_refresh_families WHERE account_id = :account")
+                .param("account", accountId).update();
         jdbc.sql("DELETE FROM account_sessions WHERE account_id = :account")
                 .param("account", accountId).update();
     }

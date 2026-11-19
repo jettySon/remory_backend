@@ -58,7 +58,7 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 
 ## 계정과 학습 데이터 API
 
-회원가입과 로그인 요청은 `application/json`으로 `email`과 `password`를 보냅니다. 성공하면 계정 정보, `accessToken`, `expiresAt`을 받습니다. 로그인 이후에는 `Authorization: Bearer <accessToken>` 헤더를 사용합니다. 로그인은 발급일로부터 14일 동안 유지되고, 로그아웃하면 사용 중인 토큰만 폐기합니다.
+회원가입과 로그인 요청은 `application/json`으로 `email`과 `password`를 보냅니다. 성공하면 계정 정보, `accessToken`, `expiresAt`을 받습니다. 로그인 이후에는 `Authorization: Bearer <accessToken>` 헤더를 사용합니다. 접근 토큰은 15분간 유효하며 자동 갱신합니다. 서버의 기기별 로그인에는 미사용 기간에 따른 만료를 두지 않습니다. 브라우저의 갱신 쿠키는 400일로 발급하고 갱신할 때마다 다시 연장합니다. 로그아웃하면 현재 기기의 갱신 권한과 그 권한으로 발급한 모든 접근 토큰을 폐기합니다.
 
 | 메서드 | 경로 | 동작 |
 | --- | --- | --- |
@@ -72,7 +72,9 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 | POST | `/api/v1/auth/password-reset/verify` | 요청 식별자와 6자리 코드 확인 후 비밀번호 변경 전용 권한 반환 |
 | POST | `/api/v1/auth/password-reset/confirm` | 인증 후 발급받은 일회용 권한으로 비밀번호 변경 및 모든 세션 폐기 |
 | GET | `/api/v1/auth/me` | 로그인된 계정 조회 |
-| POST | `/api/v1/auth/logout` | 사용 중인 세션 종료 |
+| POST | `/api/v1/auth/refresh` | 갱신 쿠키로 접근 토큰 자동 재발급 및 쿠키 교체 |
+| POST | `/api/v1/auth/session` | 기존 14일 접근 토큰을 일회성으로 로그인 유지 방식에 이관 |
+| POST | `/api/v1/auth/logout` | 현재 기기의 갱신 권한과 접근 토큰 폐기 및 쿠키 삭제 |
 | POST | `/api/v1/auth/me/delete` | 로그인한 계정의 비밀번호를 다시 확인하고 계정 삭제 |
 | POST | `/api/v1/auth/account-deletion` | 웹 탈퇴용. 이메일과 비밀번호를 확인하고 계정 삭제 |
 | GET | `/api/v1/study` | 현재 계정의 덱과 카드 조회 |
@@ -112,3 +114,20 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 `V7`에서 예전 링크용 임시 테이블을 새 인증코드 테이블로 교체합니다. 기존 링크는 사용할 수 없으므로 새 코드를 요청하세요. 서버를 종료한 뒤 새 버전으로 실행하면 Flyway가 적용합니다. 계정과 학습 데이터는 변경하지 않습니다.
 
 단위 테스트는 `./mvnw verify`로 실행합니다. 별도의 폐기 가능한 MySQL DB를 가리키는 `REMORY_TEST_JDBC_URL`과 테스트 DB 계정을 지정하면 `PasswordResetDatabaseTest`도 실행합니다. 실제 SMTP는 테스트에서 대체합니다. 동시 추측의 5회 제한, 코드·권한 재사용 방지, 재전송과 메일 실패 롤백, 소셜 전용·미가입 차단, 비밀번호 변경 전후 로그인과 학습 기록 보존을 검증합니다.
+
+
+## 로그인 유지와 자동 갱신
+
+이메일 가입·로그인과 Google 로그인 모두 같은 세션 구조를 사용합니다. 접근 토큰은 15분간 유효하며 자동 갱신합니다. 기기별 로그인과 현재 갱신 권한에는 서버의 미사용 만료를 두지 않고, 로그아웃 또는 보안상 폐기될 때까지 유지합니다. 기존 `account_sessions`는 유지하고 `V8`에서 기기별 `account_refresh_families`, 해시만 보관하는 `account_refresh_tokens`와 세션 간 연결을 추가합니다. `V9`는 아직 유효한 기존 로그인에도 미사용 만료를 없애며, 이미 만료된 권한은 되살리지 않습니다.
+
+브라우저 쿠키는 영구 저장을 보장할 수 없습니다. `remory_refresh`의 Max-Age는 400일이며 갱신마다 연장합니다. 이는 [Chrome의 쿠키 보관 상한](https://developer.chrome.com/blog/cookie-max-age-expires)에 맞춘 값입니다. 브라우저 정책으로 쿠키가 먼저 삭제되거나 앱·사이트 데이터 삭제, 장기 미사용으로 쿠키 만료가 발생하면 다시 로그인해야 합니다. 서버의 무기한 권한과 브라우저의 실제 쿠키 보관 기간은 구분합니다.
+
+`remory_refresh`는 `/api/v1/auth` 경로의 host-only, HttpOnly, SameSite=Lax 쿠키입니다. HTTPS에서는 Secure도 설정합니다. 갱신 원문은 JSON 응답에 포함하지 않고 쿠키로만 전달하며, 서버에는 SHA-256 해시를 저장합니다. 갱신할 때 새 토큰을 발급하고 이전 토큰은 30일간 사용 이력으로 남깁니다. 이 30일은 재사용 탐지 이력 보관 기간이며 로그인 미사용 만료가 아닙니다. 10초 이내 동시 재사용에는 새 인증정보 없이 409 `SESSION_REFRESH_RETRY`를 반환합니다. 그 이후 재사용에는 해당 기기 세션 전체를 폐기합니다. 동시 요청이나 재사용 차단의 결과는 트랜잭션에 반영합니다.
+
+쿠키로 동작하는 `/refresh`, `/session`, `/logout`에는 `X-Remory-Client: web` 헤더가 필요하고 `Sec-Fetch-Site: cross-site` 요청은 거부합니다. 신뢰하지 않는 원본에 CORS를 개방하지 않습니다. 웹과 API는 동일한 HTTPS 원본에서 제공하며, TLS 종료 프록시에서는 신뢰할 프록시의 전달 헤더만 처리하도록 `SERVER_FORWARD_HEADERS_STRATEGY`를 설정해 Secure 쿠키가 유지되게 합니다.
+
+비밀번호 재설정 시에는 모든 기기의 갱신 권한과 접근 토큰을 함께 폐기합니다. 탈퇴하면 연결된 갱신 정보도 외래 키로 함께 삭제됩니다. 일반 로그아웃은 현재 기기 세션만 해제하므로 다른 기기의 로그인은 유지됩니다. 만료된 기록은 주기적으로 정리합니다.
+
+기존 프런트의 탭 저장소에 남아 있는 유효한 14일 토큰은 `/session`에서 한 번만 교환할 수 있습니다. 만료됐거나 이미 새 세션에 속하는 접근 토큰은 이 방식으로 갱신 권한을 만들 수 없습니다. 새 버전을 적용할 때 백엔드를 재시작해 Flyway V8·V9를 적용하세요. 계정과 학습 기록은 보존됩니다.
+
+`SessionDatabaseTest`는 다른 MySQL 통합 테스트와 마찬가지로 별도의 폐기 가능한 `REMORY_TEST_JDBC_URL`을 지정했을 때만 실행합니다. 쿠키만으로 재실행 복원, 장기 미사용 후 갱신, 사용 이력 정리 후 현재 권한 보존, 만료된 접근 토큰 갱신, 동시 갱신·재사용 차단, 기기별 로그아웃, 비밀번호 재설정·탈퇴 시 전체 해제, Google 로그인 유지, 기존 세션 이관을 검증합니다.

@@ -34,10 +34,12 @@ public class GoogleAuthController {
     private final SecureRandom random = new SecureRandom();
     private final AccountService accounts;
     private final GoogleIdentityVerifier google;
+    private final SessionCookies cookies;
 
-    public GoogleAuthController(AccountService accounts, GoogleIdentityVerifier google) {
+    public GoogleAuthController(AccountService accounts, GoogleIdentityVerifier google, SessionCookies cookies) {
         this.accounts = accounts;
         this.google = google;
+        this.cookies = cookies;
     }
 
     @GetMapping("/challenge")
@@ -64,11 +66,12 @@ public class GoogleAuthController {
     @PostMapping
     ResponseEntity<AccountService.Session> login(
             @CookieValue(name = BROWSER_COOKIE, required = false) String browser,
-            @Valid @RequestBody GoogleLogin request) {
+            @Valid @RequestBody GoogleLogin request, HttpServletRequest servlet) {
         requireBrowser(browser);
         var identity = google.verify(request.credential(), request.nonce());
+        var session = accounts.loginWithGoogle(identity, browser, request.password());
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(accounts.loginWithGoogle(identity, browser, request.password()));
+                .header(HttpHeaders.SET_COOKIE, cookies.issue(session, servlet)).body(session);
     }
 
     @PostMapping("/me/delete")

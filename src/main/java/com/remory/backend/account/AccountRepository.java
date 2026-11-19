@@ -32,6 +32,11 @@ public class AccountRepository {
         this.jdbc = jdbc;
     }
 
+    Optional<Account> findById(String accountId) {
+        return jdbc.sql("SELECT " + ACCOUNT_COLUMNS + " FROM accounts a WHERE a.id = :id")
+                .param("id", accountId).query(AccountRepository::mapAccount).optional();
+    }
+
     void insertAccount(Account account) {
         database.update("INSERT INTO accounts (id, email) VALUES (?, ?)", account.id(), account.email());
     }
@@ -76,6 +81,9 @@ public class AccountRepository {
         return jdbc.sql("SELECT " + ACCOUNT_COLUMNS + """
                  FROM account_sessions s JOIN accounts a ON a.id = s.account_id
                 WHERE s.token_hash = :tokenHash AND s.expires_at > CURRENT_TIMESTAMP(6)
+                  AND (s.family_id IS NULL OR EXISTS (
+                    SELECT 1 FROM account_refresh_families f WHERE f.id = s.family_id
+                    AND (f.expires_at IS NULL OR f.expires_at > CURRENT_TIMESTAMP(6))))
                 """)
                 .param("tokenHash", tokenHash)
                 .query(AccountRepository::mapAccount)
@@ -87,6 +95,13 @@ public class AccountRepository {
                 INSERT INTO account_sessions (token_hash, account_id, expires_at)
                 VALUES (?, ?, ?)
                 """, tokenHash, accountId, Timestamp.from(expiresAt));
+    }
+
+    void insertSession(String accountId, byte[] tokenHash, Instant expiresAt, String familyId) {
+        database.update("""
+                INSERT INTO account_sessions (token_hash, account_id, expires_at, family_id)
+                VALUES (?, ?, ?, ?)
+                """, tokenHash, accountId, Timestamp.from(expiresAt), familyId);
     }
 
     void deleteSession(byte[] tokenHash) {
