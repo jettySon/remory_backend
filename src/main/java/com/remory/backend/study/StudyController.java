@@ -52,6 +52,22 @@ public class StudyController {
         return noStore(study.createDeck(accounts.authenticate(token).id(), deck));
     }
 
+    @PatchMapping("/decks/{deckId}")
+    ResponseEntity<StudyData.Deck> editDeck(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
+            @PathVariable @Size(max = 128) String deckId,
+            @Valid @RequestBody StudyData.DeckContent content) {
+        return noStore(study.editDeck(accounts.authenticate(token).id(), deckId, content));
+    }
+
+    @DeleteMapping("/decks/{deckId}")
+    ResponseEntity<Void> deleteDeck(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,
+            @PathVariable @Size(max = 128) String deckId) {
+        study.deleteDeck(accounts.authenticate(token).id(), deckId);
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
+
     @PostMapping("/decks/{deckId}/cards")
     ResponseEntity<List<StudyData.Card>> createCards(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String token,

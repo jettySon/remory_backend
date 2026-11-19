@@ -24,6 +24,12 @@ public record StudyData(
             @NotBlank @Size(max = 32) String icon
     ) {}
 
+    public record DeckContent(
+            @NotBlank @Size(max = 35) String title,
+            @NotNull @Size(max = 70) String subtitle,
+            @NotNull @Pattern(regexp = "peach|lavender|butter|blue") String theme
+    ) {}
+
     public record Card(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 128) String deckId,

@@ -79,6 +79,8 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 | POST | `/api/v1/auth/account-deletion` | 웹 탈퇴용. 이메일과 비밀번호를 확인하고 계정 삭제 |
 | GET | `/api/v1/study` | 현재 계정의 덱과 카드 조회 |
 | POST | `/api/v1/study/decks` | 덱 만들기 |
+| PATCH | `/api/v1/study/decks/{deckId}` | 덱 이름·설명·테마 수정. 카드·복습 기록·일정 보존 |
+| DELETE | `/api/v1/study/decks/{deckId}` | 해당 덱과 포함된 카드·복습 기록 삭제. 재시도 가능 |
 | POST | `/api/v1/study/decks/{deckId}/cards` | 해당 덱에 카드 한 장 또는 여러 장 추가 |
 | PATCH | `/api/v1/study/cards/{cardId}` | 카드 내용 수정. 복습 기록과 다음 복습일 보존 |
 | DELETE | `/api/v1/study/cards/{cardId}` | 카드와 해당 카드의 복습 기록 삭제 |
@@ -131,3 +133,5 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 기존 프런트의 탭 저장소에 남아 있는 유효한 14일 토큰은 `/session`에서 한 번만 교환할 수 있습니다. 만료됐거나 이미 새 세션에 속하는 접근 토큰은 이 방식으로 갱신 권한을 만들 수 없습니다. 새 버전을 적용할 때 백엔드를 재시작해 Flyway V8·V9를 적용하세요. 계정과 학습 기록은 보존됩니다.
 
 `SessionDatabaseTest`는 다른 MySQL 통합 테스트와 마찬가지로 별도의 폐기 가능한 `REMORY_TEST_JDBC_URL`을 지정했을 때만 실행합니다. 쿠키만으로 재실행 복원, 장기 미사용 후 갱신, 사용 이력 정리 후 현재 권한 보존, 만료된 접근 토큰 갱신, 동시 갱신·재사용 차단, 기기별 로그아웃, 비밀번호 재설정·탈퇴 시 전체 해제, Google 로그인 유지, 기존 세션 이관을 검증합니다.
+
+덱 수정은 `{"title":"...","subtitle":"...","theme":"lavender"}`를 보내며 ID와 유형 아이콘은 유지합니다. 계정 ID와 덱 ID로 범위를 제한하고 덱 행을 잠근 뒤 표시 정보만 갱신합니다. 덱 삭제는 기존 복합 외래 키로 같은 계정의 관련 데이터만 함께 삭제하며, 이미 없는 덱의 재삭제도 204를 반환합니다. 스키마 변경은 없습니다. `StudyDeckDatabaseTest`는 별도의 테스트 DB에서 수정 시 기록·일정 보존, 삭제 범위, 계정 격리, 입력 검증과 인증을 확인합니다.

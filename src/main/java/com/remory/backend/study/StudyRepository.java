@@ -70,6 +70,20 @@ public class StudyRepository {
                 .single();
     }
 
+    void updateDeckContent(String accountId, String deckId, StudyData.DeckContent content) {
+        // 덱의 표시 정보만 변경한다. 카드·복습 기록과 다음 복습일은 쓰지 않는다.
+        jdbc.sql("UPDATE decks SET title = :title, subtitle = :subtitle, theme = :theme"
+                        + " WHERE account_id = :accountId AND id = :deckId")
+                .param("title", content.title()).param("subtitle", content.subtitle()).param("theme", content.theme())
+                .param("accountId", accountId).param("deckId", deckId).update();
+    }
+
+    void deleteDeck(String accountId, String deckId) {
+        // 복합 외래 키가 같은 계정의 카드와 그 카드의 복습 기록만 함께 삭제한다.
+        jdbc.sql("DELETE FROM decks WHERE account_id = :accountId AND id = :deckId")
+                .param("accountId", accountId).param("deckId", deckId).update();
+    }
+
     boolean lockDeck(String accountId, String deckId) {
         return jdbc.sql("SELECT id FROM decks WHERE account_id = :accountId AND id = :deckId FOR UPDATE")
                 .param("accountId", accountId)

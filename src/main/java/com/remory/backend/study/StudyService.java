@@ -34,6 +34,22 @@ public class StudyService {
     }
 
     @Transactional
+    public StudyData.Deck editDeck(String accountId, String deckId, StudyData.DeckContent content) {
+        if (!repository.lockDeck(accountId, deckId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "수정할 덱을 찾지 못했어요.");
+        }
+        var normalized = new StudyData.DeckContent(content.title().strip(), content.subtitle().strip(), content.theme());
+        repository.updateDeckContent(accountId, deckId, normalized);
+        return repository.getDeck(accountId, deckId);
+    }
+
+    @Transactional
+    public void deleteDeck(String accountId, String deckId) {
+        // 없는 덱의 재삭제도 성공으로 처리해 응답 유실 후 안전하게 재시도한다.
+        repository.deleteDeck(accountId, deckId);
+    }
+
+    @Transactional
     public List<StudyData.Card> createCards(String accountId, String deckId, List<StudyData.NewCard> drafts) {
         if (!repository.lockDeck(accountId, deckId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "학습 덱을 찾지 못했어요.");
