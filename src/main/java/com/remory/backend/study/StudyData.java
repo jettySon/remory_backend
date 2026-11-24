@@ -55,13 +55,16 @@ public record StudyData(
             @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
     ) {}
 
+    private static final String FIRST_RECALL = "self_recalled|self_missed|choice_correct|choice_incorrect|choice_revealed";
+
     public record ReviewProgress(String id, Instant dueAt, int repetitions) {}
 
     public record NewReview(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 128) String cardId,
             @NotNull @Pattern(regexp = "again|hard|good|easy") String rating,
-            @NotNull @Pattern(regexp = "scheduled|focus|free") String mode
+            @NotNull @Pattern(regexp = "scheduled|focus|free") String mode,
+            @Pattern(regexp = FIRST_RECALL) String firstRecall
     ) {}
 
     public record Review(
@@ -69,6 +72,12 @@ public record StudyData(
             @NotBlank @Size(max = 128) String cardId,
             @NotNull @Pattern(regexp = "again|hard|good|easy") String rating,
             @NotNull Instant date,
-            @Pattern(regexp = "scheduled|focus|free") String mode
-    ) {}
+            @Pattern(regexp = "scheduled|focus|free") String mode,
+            @Pattern(regexp = FIRST_RECALL) String firstRecall
+    ) {
+        public Review {
+            // Import와 신규 저장 모두 정규 복습에서만 첫 시도 측정값을 보관한다.
+            if (!"scheduled".equals(mode)) firstRecall = null;
+        }
+    }
 }

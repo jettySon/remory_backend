@@ -3,6 +3,7 @@ package com.remory.backend.study;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
 
 import com.remory.backend.study.StudyData.ReviewProgress;
 
@@ -24,7 +25,8 @@ public class StudyService {
 
     @Transactional(readOnly = true)
     public Library read(String accountId) {
-        return new Library(repository.findDecks(accountId), repository.findCards(accountId));
+        return new Library(repository.findDecks(accountId), repository.findCards(accountId),
+                repository.findLatestReviews(accountId));
     }
 
     @Transactional
@@ -102,14 +104,16 @@ public class StudyService {
         var progress = repository.findProgressForUpdate(accountId, request.cardId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "복습할 카드를 찾지 못했어요."));
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        var review = new StudyData.Review(request.id(), request.cardId(), request.rating(), now, request.mode());
+        var review = new StudyData.Review(request.id(), request.cardId(), request.rating(), now, request.mode(),
+                request.firstRecall());
         try {
             repository.insertReview(accountId, review);
         } catch (DuplicateKeyException ignored) {
             // 응답 유실로 같은 평가가 다시 들어오면 복습 횟수를 한 번만 반영한다.
             var existing = repository.getReviewForUpdate(accountId, request.id());
             if (!existing.cardId().equals(request.cardId())
-                    || !existing.rating().equals(request.rating()) || !request.mode().equals(existing.mode())) {
+                    || !existing.rating().equals(request.rating()) || !request.mode().equals(existing.mode())
+                    || !Objects.equals(existing.firstRecall(), review.firstRecall())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 사용한 복습 ID예요.");
             }
             return new RecordedReview(progress, existing);
@@ -138,6 +142,6 @@ public class StudyService {
         }
     }
 
-    public record Library(List<StudyData.Deck> decks, List<StudyData.Card> cards) {}
+    public record Library(List<StudyData.Deck> decks, List<StudyData.Card> cards, List<StudyData.Review> latestReviews) {}
     public record RecordedReview(ReviewProgress progress, StudyData.Review review) {}
 }

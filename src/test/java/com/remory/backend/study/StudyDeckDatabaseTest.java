@@ -124,6 +124,83 @@ class StudyDeckDatabaseTest {
         mvc.perform(delete("/api/v1/study/decks/deck")).andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void libraryIncludesLatestReviewPerCardAcrossAllModesAndAccountScope() throws Exception {
+        User owner = signup();
+        User other = signup();
+        seed(owner, "deck", "shared-card");
+        seed(other, "deck", "shared-card");
+        var free = call(post("/api/v1/study/reviews"), owner,
+                Map.of("id", "free-review", "cardId", "shared-card", "rating", "hard", "mode", "free"), 200);
+        assertThat(library(owner).get("latestReviews")).hasSize(1);
+        assertThat(library(owner).get("latestReviews").get(0)).isEqualTo(free.get("review"));
+        assertThat(library(other).get("latestReviews").get(0).get("id").asText()).isEqualTo("review-shared-card");
+        var focus = call(post("/api/v1/study/reviews"), owner,
+                Map.of("id", "focus-review", "cardId", "shared-card", "rating", "easy", "mode", "focus"), 200);
+        assertThat(library(owner).get("latestReviews").get(0)).isEqualTo(focus.get("review"));
+        call(delete("/api/v1/study/cards/shared-card"), owner, null, 204);
+        assertThat(library(owner).get("latestReviews")).isEmpty();
+        assertThat(library(other).get("latestReviews")).hasSize(1);
+    }
+
+    @Test
+    void importedHistoryUsesReviewTimestampAndStableIdOrderInsteadOfInsertOrder() throws Exception {
+        User user = signup();
+        seed(user, "deck", "card");
+        var reviews = List.of(
+                Map.of("id", "z-new", "cardId", "card", "date", "2090-01-03T12:00:00Z", "rating", "easy", "mode", "free"),
+                Map.of("id", "a-tied", "cardId", "card", "date", "2090-01-03T12:00:00Z", "rating", "hard", "mode", "focus"),
+                Map.of("id", "last-inserted", "cardId", "card", "date", "2000-01-01T12:00:00Z", "rating", "again", "mode", "scheduled"));
+        call(post("/api/v1/study/import"), user, Map.of("decks", List.of(), "cards", List.of(), "logs", reviews), 204);
+        JsonNode latest = library(user).get("latestReviews");
+        assertThat(latest).hasSize(1);
+        assertThat(latest.get(0).get("id").asText()).isEqualTo("z-new");
+        assertThat(latest.get(0).get("rating").asText()).isEqualTo("easy");
+        assertThat(latest.get(0).get("date").asText()).isEqualTo("2090-01-03T12:00:00Z");
+    }
+
+    @Test
+    void unstudiedCardsHaveNoLastReviewUntilTheirFirstFreeReviewWithoutChangingSchedule() throws Exception {
+        User user = signup();
+        call(post("/api/v1/study/decks"), user,
+                Map.of("id", "deck", "title", "deck", "subtitle", "", "theme", "blue", "icon", "book"), 200);
+        call(post("/api/v1/study/decks/deck/cards"), user,
+                Map.of("cards", List.of(Map.of("id", "card", "front", "Question", "back", "Answer", "kind", "basic"))), 200);
+        JsonNode before = library(user);
+        assertThat(before.get("latestReviews")).isEmpty();
+        var saved = call(post("/api/v1/study/reviews"), user,
+                Map.of("id", "first-free", "cardId", "card", "rating", "again", "mode", "free"), 200);
+        JsonNode after = library(user);
+        assertThat(after.get("cards")).isEqualTo(before.get("cards"));
+        assertThat(after.get("latestReviews")).hasSize(1);
+        assertThat(after.get("latestReviews").get(0)).isEqualTo(saved.get("review"));
+    }
+
+    @Test
+    void savesFirstRecallFromNewAndImportedReviewsAndKeepsRetriesIdempotent() throws Exception {
+        User user = signup();
+        seed(user, "deck", "card");
+        assertThat(library(user).get("latestReviews").get(0).path("firstRecall").isNull()).isTrue();
+
+        var imported = Map.of("id", "imported", "cardId", "card", "rating", "good", "mode", "scheduled",
+                "date", "2020-11-20T12:00:00Z", "firstRecall", "self_recalled");
+        call(post("/api/v1/study/import"), user, Map.of("decks", List.of(), "cards", List.of(), "logs", List.of(imported)), 204);
+        String importedRecall = jdbc.sql("SELECT first_recall FROM review_logs WHERE account_id = :accountId AND id = 'imported'")
+                .param("accountId", user.id()).query(String.class).single();
+        assertThat(importedRecall).isEqualTo("self_recalled");
+
+        var request = Map.of("id", "measured", "cardId", "card", "rating", "again", "mode", "scheduled",
+                "firstRecall", "self_missed");
+        var recorded = call(post("/api/v1/study/reviews"), user, request, 200);
+        assertThat(recorded.get("review").get("firstRecall").asText()).isEqualTo("self_missed");
+        assertThat(library(user).get("latestReviews").get(0)).isEqualTo(recorded.get("review"));
+        assertThat(call(post("/api/v1/study/reviews"), user, request, 200)).isEqualTo(recorded);
+        assertThat(logs(user)).hasSize(3);
+        var changed = new java.util.HashMap<>(request);
+        changed.put("firstRecall", "self_recalled");
+        call(post("/api/v1/study/reviews"), user, changed, 409);
+    }
+
     private User signup() throws Exception {
         var result = mvc.perform(post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("email", UUID.randomUUID() + "@example.com", "password", "test-password"))))

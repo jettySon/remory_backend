@@ -22,7 +22,7 @@ public class StudyRepository {
 
     private static final String DECK_FIELDS = "id, title, subtitle, theme, icon";
     private static final String CARD_FIELDS = "id, deck_id, front, back, due_at, repetitions, kind, choices";
-    private static final String REVIEW_FIELDS = "id, card_id, rating, reviewed_at, mode";
+    private static final String REVIEW_FIELDS = "id, card_id, rating, reviewed_at, mode, first_recall";
     private static final String INSERT_DECK = """
             INSERT INTO decks (account_id, %s) VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE id = decks.id
@@ -32,7 +32,7 @@ public class StudyRepository {
             ON DUPLICATE KEY UPDATE id = cards.id
             """.formatted(CARD_FIELDS);
     private static final String INSERT_REVIEW = "INSERT INTO review_logs (account_id, " + REVIEW_FIELDS
-            + ") VALUES (?, ?, ?, ?, ?, ?)";
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?)";
 
     private final JdbcTemplate database;
     private final JdbcClient jdbc;
@@ -55,6 +55,21 @@ public class StudyRepository {
         return jdbc.sql("SELECT " + CARD_FIELDS + " FROM cards WHERE account_id = :accountId ORDER BY row_id")
                 .param("accountId", accountId)
                 .query(this::card)
+                .list();
+    }
+
+    List<StudyData.Review> findLatestReviews(String accountId) {
+        // 전체 이력을 전송하지 않고 카드마다 최근 한 건만 조회한다. 자유·집중 복습도 포함한다.
+        return jdbc.sql("""
+                SELECT %s FROM (
+                    SELECT %s, ROW_NUMBER() OVER (
+                        PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC
+                    ) AS review_rank
+                    FROM review_logs WHERE account_id = :accountId
+                ) ranked WHERE review_rank = 1 ORDER BY card_id
+                """.formatted(REVIEW_FIELDS, REVIEW_FIELDS))
+                .param("accountId", accountId)
+                .query(this::review)
                 .list();
     }
 
@@ -201,7 +216,7 @@ public class StudyRepository {
 
     private StudyData.Review review(ResultSet row, int index) throws SQLException {
         return new StudyData.Review(row.getString("id"), row.getString("card_id"), row.getString("rating"),
-                instant(row, "reviewed_at"), row.getString("mode"));
+                instant(row, "reviewed_at"), row.getString("mode"), row.getString("first_recall"));
     }
 
     private List<String> decodeChoices(String value) {
@@ -225,7 +240,8 @@ public class StudyRepository {
     }
 
     private static Object[] reviewValues(String accountId, StudyData.Review review) {
-        return new Object[]{accountId, review.id(), review.cardId(), review.rating(), utc(review.date()), review.mode()};
+        return new Object[]{accountId, review.id(), review.cardId(), review.rating(), utc(review.date()),
+                review.mode(), review.firstRecall()};
     }
 
     static LocalDateTime utc(Instant instant) {

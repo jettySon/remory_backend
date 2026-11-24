@@ -66,6 +66,6 @@ class ReviewSchedulerTest {
     }
 
     private static StudyData.Review review(String id, String rating, Instant date) {
-        return new StudyData.Review(id, "card", rating, date, "scheduled");
+        return new StudyData.Review(id, "card", rating, date, "scheduled", null);
     }
 }

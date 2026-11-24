@@ -77,7 +77,7 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 | POST | `/api/v1/auth/logout` | 현재 기기의 갱신 권한과 접근 토큰 폐기 및 쿠키 삭제 |
 | POST | `/api/v1/auth/me/delete` | 로그인한 계정의 비밀번호를 다시 확인하고 계정 삭제 |
 | POST | `/api/v1/auth/account-deletion` | 웹 탈퇴용. 이메일과 비밀번호를 확인하고 계정 삭제 |
-| GET | `/api/v1/study` | 현재 계정의 덱과 카드 조회 |
+| GET | `/api/v1/study` | 현재 계정의 덱·카드와 카드별 마지막 복습 기록(`latestReviews`) 조회. 정규·자유·집중 복습 포함 |
 | POST | `/api/v1/study/decks` | 덱 만들기 |
 | PATCH | `/api/v1/study/decks/{deckId}` | 덱 이름·설명·테마 수정. 카드·복습 기록·일정 보존 |
 | DELETE | `/api/v1/study/decks/{deckId}` | 해당 덱과 포함된 카드·복습 기록 삭제. 재시도 가능 |
@@ -92,6 +92,35 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 ### 회원탈퇴
 
 설정에서 탈퇴할 때는 로그인 토큰과 `{"password":"..."}`를 보내며, 웹 탈퇴는 `{"email":"...","password":"..."}`를 보냅니다. Google 전용 계정은 Google 본인 확인 후 삭제하며, 성공하면 계정, 비밀번호 해시, 소셜 로그인 연결, 모든 세션, 덱·카드·복습 기록과 이관 전 학습 스냅샷이 한 트랜잭션에서 삭제됩니다.
+
+### 첫 시도 기록 비교
+
+정규 복습 로그의 `first_recall`은 일반 카드의 자기 평가(`self_recalled`, `self_missed`)와 객관식 첫 응답(`choice_correct`, `choice_incorrect`)을 구분합니다. 보기 선택 전에 답을 연 경우는 `choice_revealed`, 도입 전 기록은 `NULL`입니다. 반복 학습(`free`)과 집중 복습(`focus`)은 실제 시각과 평가를 남깁니다.
+
+아래 조회는 이전 정규 복습부터 이번 정규 복습까지의 구간마다 반복 학습 횟수와 마지막 반복 학습 시점, 첫 시도 결과를 보여줍니다. DataGrip에서 `:account_id`에 조회할 계정 ID를 넣으세요.
+
+```sql
+WITH scheduled AS (
+    SELECT account_id, card_id, id, reviewed_at, first_recall,
+           LAG(reviewed_at) OVER (PARTITION BY card_id ORDER BY reviewed_at, id) AS previous_review_at
+    FROM review_logs
+    WHERE account_id = :account_id AND (mode = 'scheduled' OR mode IS NULL)
+)
+SELECT s.card_id, s.id AS review_id, s.reviewed_at, s.previous_review_at, s.first_recall,
+       COUNT(CASE WHEN p.mode = 'free' THEN 1 END) AS repeat_count,
+       MAX(CASE WHEN p.mode = 'free' THEN p.reviewed_at END) AS last_repeat_at,
+       COUNT(CASE WHEN p.mode = 'focus' THEN 1 END) AS focus_count
+FROM scheduled s
+LEFT JOIN review_logs p ON p.account_id = s.account_id AND p.card_id = s.card_id
+    AND p.mode IN ('free', 'focus')
+    AND p.reviewed_at > s.previous_review_at AND p.reviewed_at < s.reviewed_at
+WHERE s.previous_review_at IS NOT NULL
+    AND s.first_recall IN ('self_recalled', 'self_missed', 'choice_correct', 'choice_incorrect')
+GROUP BY s.card_id, s.id, s.reviewed_at, s.previous_review_at, s.first_recall
+ORDER BY s.reviewed_at DESC;
+```
+
+`repeat_count`가 0인 경우와 1 이상인 경우를 볼 때는 자기 평가와 객관식을 따로 보고, 복습 사이에 지난 시간과 집중 복습도 함께 고려하세요. 이 조회는 관찰 기록의 차이를 보여줍니다.
 
 ### 저장과 비회원 이관
 
