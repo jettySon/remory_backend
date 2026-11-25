@@ -3,6 +3,8 @@ package com.remory.backend.study;
 import java.time.Instant;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,6 +32,8 @@ public record StudyData(
             @NotNull @Pattern(regexp = "peach|lavender|butter|blue") String theme
     ) {}
 
+    private static final int MAX_EXPLANATION_LENGTH = 240;
+
     public record Card(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 128) String deckId,
@@ -38,21 +42,31 @@ public record StudyData(
             @NotNull Instant dueAt,
             @NotNull @PositiveOrZero Integer repetitions,
             @Pattern(regexp = "basic|word|cloze|choice") String kind,
-            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
-    ) {}
+            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Size(max = MAX_EXPLANATION_LENGTH) String explanation
+    ) {
+        public Card {
+            if (explanation != null) {
+                explanation = explanation.strip();
+                if (explanation.isEmpty()) explanation = null;
+            }
+        }
+    }
 
     public record NewCard(
             @NotBlank @Size(max = 128) String id,
             @NotBlank @Size(max = 20000) String front,
             @NotBlank @Size(max = 20000) String back,
             @Pattern(regexp = "basic|word|cloze|choice") String kind,
-            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
+            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices,
+            @Size(max = MAX_EXPLANATION_LENGTH) String explanation
     ) {}
 
     public record CardContent(
             @NotBlank @Size(max = 20000) String front,
             @NotBlank @Size(max = 20000) String back,
-            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices
+            @Size(max = 3) List<@NotBlank @Size(max = 20000) String> choices,
+            @Size(max = MAX_EXPLANATION_LENGTH) String explanation
     ) {}
 
     private static final String FIRST_RECALL = "self_recalled|self_missed|choice_correct|choice_incorrect|choice_revealed";

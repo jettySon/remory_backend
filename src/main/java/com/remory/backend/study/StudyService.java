@@ -62,7 +62,7 @@ public class StudyService {
         }
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         var cards = drafts.stream().map(draft -> new StudyData.Card(draft.id(), deckId, draft.front(),
-                draft.back(), now, 0, draft.kind(), draft.choices())).toList();
+                draft.back(), now, 0, draft.kind(), draft.choices(), draft.explanation())).toList();
         repository.insertCards(accountId, cards);
         var saved = repository.findCardsForUpdate(accountId, deckId, ids);
         if (saved.size() != drafts.size()) {
@@ -86,10 +86,13 @@ public class StudyService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "객관식 카드에만 보기를 입력할 수 있어요.");
         }
 
+        // 이전 클라이언트의 수정 요청은 해설을 생략한다. 해설을 지울 때는 빈 문자열을 보낸다.
+        String explanation = content.explanation() == null ? card.explanation() : content.explanation();
         // 내용만 쓰고, 잠금 상태에서 읽은 복습일과 횟수를 API 응답에 그대로 돌려준다.
-        repository.updateCardContent(accountId, cardId, new StudyData.CardContent(content.front(), content.back(), choices));
-        return new StudyData.Card(card.id(), card.deckId(), content.front(), content.back(),
-                card.dueAt(), card.repetitions(), card.kind(), choices);
+        var edited = new StudyData.Card(card.id(), card.deckId(), content.front(), content.back(),
+                card.dueAt(), card.repetitions(), card.kind(), choices, explanation);
+        repository.updateCardContent(accountId, edited);
+        return edited;
     }
 
     @Transactional

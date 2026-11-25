@@ -201,6 +201,51 @@ class StudyDeckDatabaseTest {
         call(post("/api/v1/study/reviews"), user, changed, 409);
     }
 
+    @Test
+    void editsAndClearsOptionalCardExplanationWithoutChangingReviews() throws Exception {
+        User user = signup();
+        seed(user, "deck", "card");
+        var before = library(user).get("cards").get(0);
+        var logsBefore = logs(user);
+        assertThat(before.has("explanation")).isFalse();
+
+        var explanation = "final 변수는 한 번만 대입할 수 있어요.";
+        var edited = call(patch("/api/v1/study/cards/card"), user,
+                Map.of("front", "Question", "back", "Answer", "explanation", "  " + explanation + "  "), 200);
+        assertThat(edited.path("explanation").asText()).isEqualTo(explanation);
+        assertThat(edited.get("dueAt")).isEqualTo(before.get("dueAt"));
+        assertThat(edited.get("repetitions")).isEqualTo(before.get("repetitions"));
+        assertThat(library(user).get("cards").get(0)).isEqualTo(edited);
+
+        call(patch("/api/v1/study/cards/card"), user, Map.of("front", "Question", "back", "Answer"), 200);
+        assertThat(library(user).get("cards").get(0)).isEqualTo(edited);
+        call(patch("/api/v1/study/cards/card"), user,
+                Map.of("front", "Question", "back", "Answer", "explanation", "가".repeat(241)), 400);
+        assertThat(library(user).get("cards").get(0)).isEqualTo(edited);
+        call(patch("/api/v1/study/cards/card"), user,
+                Map.of("front", "Question", "back", "Answer", "explanation", ""), 200);
+        assertThat(library(user).get("cards").get(0)).isEqualTo(before);
+        assertThat(logs(user)).isEqualTo(logsBefore);
+    }
+
+    @Test
+    void savesNewAndGuestImportedCardExplanationsInTheAccountLibrary() throws Exception {
+        User user = signup();
+        seed(user, "deck", "card");
+        var created = call(post("/api/v1/study/decks/deck/cards"), user, Map.of("cards", List.of(
+                Map.of("id", "new", "front", "Why?", "back", "Answer", "explanation", "A short reason."))), 200);
+        assertThat(created.get(0).path("explanation").asText()).isEqualTo("A short reason.");
+
+        var imported = Map.of("id", "guest", "deckId", "deck", "front", "Why?", "back", "Answer",
+                "explanation", "Guest explanation.", "dueAt", "2030-11-25T10:30:00Z", "repetitions", 0);
+        call(post("/api/v1/study/import"), user,
+                Map.of("decks", List.of(), "cards", List.of(imported), "logs", List.of()), 204);
+        JsonNode cards = library(user).get("cards");
+        assertThat(cards).hasSize(3);
+        assertThat(cards.get(1)).isEqualTo(created.get(0));
+        assertThat(cards.get(2).path("explanation").asText()).isEqualTo("Guest explanation.");
+    }
+
     private User signup() throws Exception {
         var result = mvc.perform(post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("email", UUID.randomUUID() + "@example.com", "password", "test-password"))))

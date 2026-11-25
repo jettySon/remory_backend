@@ -21,14 +21,14 @@ import org.springframework.stereotype.Repository;
 public class StudyRepository {
 
     private static final String DECK_FIELDS = "id, title, subtitle, theme, icon";
-    private static final String CARD_FIELDS = "id, deck_id, front, back, due_at, repetitions, kind, choices";
+    private static final String CARD_FIELDS = "id, deck_id, front, back, due_at, repetitions, kind, choices, explanation";
     private static final String REVIEW_FIELDS = "id, card_id, rating, reviewed_at, mode, first_recall";
     private static final String INSERT_DECK = """
             INSERT INTO decks (account_id, %s) VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE id = decks.id
             """.formatted(DECK_FIELDS);
     private static final String INSERT_CARD = """
-            INSERT INTO cards (account_id, %s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO cards (account_id, %s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE id = cards.id
             """.formatted(CARD_FIELDS);
     private static final String INSERT_REVIEW = "INSERT INTO review_logs (account_id, " + REVIEW_FIELDS
@@ -126,9 +126,9 @@ public class StudyRepository {
                 .optional();
     }
 
-    void updateCardContent(String accountId, String cardId, StudyData.CardContent content) {
-        database.update("UPDATE cards SET front = ?, back = ?, choices = ? WHERE account_id = ? AND id = ?",
-                content.front(), content.back(), encodeChoices(content.choices()), accountId, cardId);
+    void updateCardContent(String accountId, StudyData.Card card) {
+        database.update("UPDATE cards SET front = ?, back = ?, choices = ?, explanation = ? WHERE account_id = ? AND id = ?",
+                card.front(), card.back(), encodeChoices(card.choices()), card.explanation(), accountId, card.id());
     }
 
     void deleteCard(String accountId, String cardId) {
@@ -191,7 +191,7 @@ public class StudyRepository {
         if (!cards.isEmpty()) {
             database.batchUpdate(INSERT_CARD, cards.stream().map(card -> new Object[]{
                     accountId, card.id(), card.deckId(), card.front(), card.back(), utc(card.dueAt()),
-                    card.repetitions(), card.kind(), encodeChoices(card.choices())
+                    card.repetitions(), card.kind(), encodeChoices(card.choices()), card.explanation()
             }).toList());
         }
     }
@@ -211,7 +211,7 @@ public class StudyRepository {
     private StudyData.Card card(ResultSet row, int index) throws SQLException {
         return new StudyData.Card(row.getString("id"), row.getString("deck_id"), row.getString("front"),
                 row.getString("back"), instant(row, "due_at"), row.getInt("repetitions"),
-                row.getString("kind"), decodeChoices(row.getString("choices")));
+                row.getString("kind"), decodeChoices(row.getString("choices")), row.getString("explanation"));
     }
 
     private StudyData.Review review(ResultSet row, int index) throws SQLException {
