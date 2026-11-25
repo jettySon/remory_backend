@@ -27,6 +27,16 @@ public class SessionRepository {
         return token(hash, false);
     }
 
+    Optional<String> findActiveRefreshAccount(byte[] hash, Instant now) {
+        return jdbc.sql("""
+                SELECT f.account_id
+                FROM account_refresh_tokens t JOIN account_refresh_families f ON f.id = t.family_id
+                WHERE t.token_hash = :hash AND t.used_at IS NULL
+                  AND (t.expires_at IS NULL OR t.expires_at > :now)
+                  AND (f.expires_at IS NULL OR f.expires_at > :now)
+                """).param("hash", hash).param("now", Timestamp.from(now)).query(String.class).optional();
+    }
+
     Optional<RefreshToken> lockToken(byte[] hash) {
         return token(hash, true);
     }

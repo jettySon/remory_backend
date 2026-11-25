@@ -72,6 +72,7 @@ REMORY_TEST_JDBC_URL='jdbc:mysql://127.0.0.1:13318/remory_google_test?sslMode=DI
 | POST | `/api/v1/auth/password-reset/verify` | 요청 식별자와 6자리 코드 확인 후 비밀번호 변경 전용 권한 반환 |
 | POST | `/api/v1/auth/password-reset/confirm` | 인증 후 발급받은 일회용 권한으로 비밀번호 변경 및 모든 세션 폐기 |
 | GET | `/api/v1/auth/me` | 로그인된 계정 조회 |
+| GET | `/api/v1/auth/review-reminder` | 갱신 쿠키를 사용해 현재 복습 가능 카드가 있는지 조회 |
 | POST | `/api/v1/auth/refresh` | 갱신 쿠키로 접근 토큰 자동 재발급 및 쿠키 교체 |
 | POST | `/api/v1/auth/session` | 기존 14일 접근 토큰을 일회성으로 로그인 유지 방식에 이관 |
 | POST | `/api/v1/auth/logout` | 현재 기기의 갱신 권한과 접근 토큰 폐기 및 쿠키 삭제 |

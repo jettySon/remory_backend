@@ -69,6 +69,14 @@ public class SessionService {
         return tokens(account, token.familyId(), now);
     }
 
+    // Background reminders only check the current session. They never rotate or consume its cookie.
+    String accountForReminder(String rawToken) {
+        var accountId = valid(rawToken)
+                ? repository.findActiveRefreshAccount(PasswordResetService.hash(rawToken), Instant.now())
+                : java.util.Optional.<String>empty();
+        return accountId.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED"));
+    }
+
     @Transactional
     public AccountService.Session upgradeLegacy(String authorization) {
         byte[] hash = AccountService.authorizationHash(authorization);

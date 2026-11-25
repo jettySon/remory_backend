@@ -58,6 +58,11 @@ public class StudyRepository {
                 .list();
     }
 
+    boolean hasDueCards(String accountId, Instant now) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM cards WHERE account_id = :accountId AND due_at <= :now)")
+                .param("accountId", accountId).param("now", utc(now)).query(Boolean.class).single();
+    }
+
     List<StudyData.Review> findLatestReviews(String accountId) {
         // 전체 이력을 전송하지 않고 카드마다 최근 한 건만 조회한다. 자유·집중 복습도 포함한다.
         return jdbc.sql("""

@@ -29,6 +29,11 @@ public class StudyService {
                 repository.findLatestReviews(accountId));
     }
 
+    @Transactional(readOnly = true)
+    public boolean hasDueCards(String accountId) {
+        return repository.hasDueCards(accountId, Instant.now());
+    }
+
     @Transactional
     public StudyData.Deck createDeck(String accountId, StudyData.Deck deck) {
         repository.insertDeck(accountId, deck);

@@ -237,6 +237,48 @@ class SessionDatabaseTest {
         remove(initial);
     }
 
+    @Test
+    void reminderChecksLatestAccountDueCardsWithoutConsumingTheRefreshCookie() throws Exception {
+        Login login = signup(false);
+        Login other = signup(false);
+        String bearer = "Bearer " + login.session().accessToken();
+        var check = "/api/v1/auth/review-reminder";
+        mvc.perform(get(check).cookie(login.cookie())).andExpect(status().isForbidden());
+        mvc.perform(get(check).header("X-Remory-Client", "web")).andExpect(status().isUnauthorized());
+        mvc.perform(get(check).cookie(login.cookie()).header("X-Remory-Client", "web")
+                .header("Sec-Fetch-Site", "cross-site")).andExpect(status().isForbidden());
+
+        mvc.perform(post("/api/v1/study/decks").header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"id":"deck","title":"Deck","subtitle":"","theme":"blue","icon":"book"}
+                        """)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/study/decks/deck/cards").header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"cards":[{"id":"card","front":"Question","back":"Answer"}]}
+                        """)).andExpect(status().isOk());
+
+        mvc.perform(get(check).cookie(login.cookie()).header("X-Remory-Client", "web"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.due").value(true))
+                .andExpect(header().doesNotExist("Set-Cookie")).andExpect(header().string("Cache-Control", "no-store"));
+        mvc.perform(get(check).cookie(other.cookie()).header("X-Remory-Client", "web"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.due").value(false));
+
+        mvc.perform(post("/api/v1/study/reviews").header("Authorization", bearer).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"id":"review","cardId":"card","rating":"good","mode":"scheduled"}
+                        """)).andExpect(status().isOk());
+        mvc.perform(get(check).cookie(login.cookie()).header("X-Remory-Client", "web"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.due").value(false));
+
+        Login renewed = session(refresh(login.cookie(), 200));
+        mvc.perform(get(check).cookie(login.cookie()).header("X-Remory-Client", "web"))
+                .andExpect(status().isUnauthorized()).andExpect(header().doesNotExist("Set-Cookie"));
+        mvc.perform(get(check).cookie(renewed.cookie()).header("X-Remory-Client", "web"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.due").value(false));
+    }
+
     private Login signup(boolean secure) throws Exception {
         return session(mvc.perform(post("/api/v1/auth/signup").secure(secure).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("email", UUID.randomUUID() + "@example.com", "password", "old-password"))))
