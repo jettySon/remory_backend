@@ -64,6 +64,27 @@ class StudyDeckDatabaseTest {
     }
 
     @Test
+    void createsEditsAndImportsDecksWithTheNewColors() throws Exception {
+        User user = signup();
+        var created = call(post("/api/v1/study/decks"), user,
+                Map.of("id", "new-deck", "title", "New deck", "subtitle", "", "theme", "sage", "icon", "book"), 200);
+        assertThat(created.path("theme").asText()).isEqualTo("sage");
+
+        var edited = call(patch("/api/v1/study/decks/new-deck"), user,
+                Map.of("title", "New deck", "subtitle", "", "theme", "fog"), 200);
+        assertThat(edited.path("theme").asText()).isEqualTo("fog");
+
+        var guestDecks = List.of(
+                Map.of("id", "guest-sage", "title", "Guest sage", "subtitle", "", "theme", "sage", "icon", "code"),
+                Map.of("id", "guest-fog", "title", "Guest fog", "subtitle", "", "theme", "fog", "icon", "book"));
+        call(post("/api/v1/study/import"), user, Map.of("decks", guestDecks, "cards", List.of(), "logs", List.of()), 204);
+
+        var decks = library(user).get("decks");
+        assertThat(decks).extracting(deck -> deck.path("theme").asText())
+                .containsExactly("fog", "sage", "fog");
+    }
+
+    @Test
     void deletingDeckCascadesItsCardsAndReviewsAndIsSafeToRetry() throws Exception {
         User user = signup();
         seed(user, "remove", "remove-card");
